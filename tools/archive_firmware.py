@@ -25,17 +25,14 @@ sys.dont_write_bytecode = True
 from verify_firmware import FLASH_SIZE, REQUIRED_IMAGES, verify_firmware_layout
 
 
-APP = "FoloToy-AI-Passport"
+APP = "ai-passport-ninehalf"
 FULL_BIN = f"{APP}-full.bin"
-ARTIFACTS = (
-    f"{APP}.elf",
-    f"{APP}.map",
-    f"{APP}.bin",
-    FULL_BIN,
-    "bootloader/bootloader.bin",
-    "partition_table/partition-table.bin",
-    "flash_args",
-)
+def artifact_names(app: str) -> tuple[str, ...]:
+    return (f"{app}.elf", f"{app}.map", f"{app}.bin", f"{app}-full.bin",
+            "bootloader/bootloader.bin", "partition_table/partition-table.bin", "flash_args")
+
+
+ARTIFACTS = artifact_names(APP)
 MANIFEST = "manifest.json"
 SHA256 = re.compile(r"[0-9a-f]{64}")
 # macOS exposes its system temporary directories through these two aliases.
@@ -98,7 +95,7 @@ def read_artifact(directory: Path, name: str) -> bytes:
     return data
 
 
-def parse_flash_args(raw: bytes) -> dict[str, int]:
+def parse_flash_args(raw: bytes, app: str = APP) -> dict[str, int]:
     """Parse the generated flash parameters without invoking a shell or esptool."""
     options: dict[str, str] = {}
     images: dict[str, int] = {}
@@ -126,7 +123,7 @@ def parse_flash_args(raw: bytes) -> dict[str, int]:
         images[name] = offset
     if options.get("--flash_size") != "8MB":
         raise ValueError("flash_args must select the required 8 MB flash size")
-    if any(name not in images for name in REQUIRED_IMAGES):
+    if any(name not in images for name in (*REQUIRED_IMAGES[:2], f"{app}.bin")):
         raise ValueError("flash_args is missing required images")
     if images["bootloader/bootloader.bin"] != 0:
         raise ValueError("the merged bootloader must start at 0x0")
@@ -162,45 +159,46 @@ def application_descriptor(app: bytes) -> dict[str, str]:
     }
 
 
-def inspect_build(directory: Path) -> tuple[dict, dict[str, bytes]]:
+def inspect_build(directory: Path, app: str = APP) -> tuple[dict, dict[str, bytes]]:
     """Read one artifact snapshot and validate the firmware/ELF correspondence."""
     directory = safe_path(directory)
     if not directory.is_dir():
         raise ValueError(f"build directory does not exist: {directory}")
-    artifacts = {name: read_artifact(directory, name) for name in ARTIFACTS}
-    offsets = parse_flash_args(artifacts["flash_args"])
+    artifacts = {name: read_artifact(directory, name) for name in artifact_names(app)}
+    offsets = parse_flash_args(artifacts["flash_args"], app)
     # Extra partition images are not copied separately, but their contents may
     # remain in the full image. Reject symlink paths even though these entries
     # are never opened or executed; no firmware contents are sanitized here.
     for name in offsets:
         safe_path(directory / name)
-    merged = artifacts[FULL_BIN]
+    full_bin = f"{app}-full.bin"
+    merged = artifacts[full_bin]
     if len(merged) > FLASH_SIZE:
         raise ValueError("merged firmware exceeds 8 MB")
-    for name in REQUIRED_IMAGES:
+    for name in (*REQUIRED_IMAGES[:2], f"{app}.bin"):
         offset = offsets[name]
         image = artifacts[name]
         if merged[offset : offset + len(image)] != image:
             raise ValueError(f"{name} differs in merged firmware at 0x{offset:x}")
     verify_firmware_layout(
-        merged, directory, offsets["partition_table/partition-table.bin"], offsets[f"{APP}.bin"]
+        merged, directory, offsets["partition_table/partition-table.bin"], offsets[f"{app}.bin"], f"{app}.bin"
     )
-    elf = artifacts[f"{APP}.elf"]
+    elf = artifacts[f"{app}.elf"]
     if len(elf) < 52 or elf[:6] != b"\x7fELF\x01\x01" or struct.unpack_from("<H", elf, 18)[0] != 243:
         raise ValueError("application ELF must be a 32-bit little-endian RISC-V ELF")
-    descriptor = application_descriptor(artifacts[f"{APP}.bin"])
+    descriptor = application_descriptor(artifacts[f"{app}.bin"])
     files = {
         name: {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
         for name, data in artifacts.items()
     }
-    elf_sha = files[f"{APP}.elf"]["sha256"]
+    elf_sha = files[f"{app}.elf"]["sha256"]
     if descriptor["embedded_elf_sha256"] != elf_sha:
         raise ValueError("application descriptor ELF SHA256 does not match the application ELF")
     return {
         "schema_version": 1,
         "target": "esp32c3",
         "flash_size_bytes": FLASH_SIZE,
-        "full_bin_sha256": files[FULL_BIN]["sha256"],
+        "full_bin_sha256": files[full_bin]["sha256"],
         "app_elf_sha256": elf_sha,
         "app_descriptor": descriptor,
         "image_offsets": offsets,
@@ -225,12 +223,15 @@ def verify_archive(directory: Path) -> dict:
     expected = json.loads(
         read_artifact(directory, MANIFEST).decode("utf-8"), object_pairs_hook=unique_json_object
     )
-    actual, _ = inspect_build(directory)
+    app = expected.get("app_descriptor", {}).get("project_name")
+    if app not in (APP, "NineHalf", "FoloToy-AI-Passport"):
+        raise ValueError("archive has an unsupported application name")
+    actual, _ = inspect_build(directory, app)
     if expected != actual:
         raise ValueError("archive manifest does not match its artifacts")
     if directory.name != actual["full_bin_sha256"]:
         raise ValueError("archive directory name does not match the full firmware SHA256")
-    allowed = set(ARTIFACTS) | {MANIFEST, "bootloader", "partition_table"}
+    allowed = set(artifact_names(app)) | {MANIFEST, "bootloader", "partition_table"}
     for parent, directories, files in os.walk(directory, followlinks=False):
         for name in directories + files:
             child = Path(parent) / name

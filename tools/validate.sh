@@ -54,13 +54,30 @@ run_static_checks() {
         tests/test_bsp_audio_recovery.c components/bsp/src/bsp_es8311_sleep_check.c \
         -o "${test_dir}/test_bsp_audio_recovery"
     "${test_dir}/test_bsp_audio_recovery"
+    local gc_flag="-Wl,--gc-sections"
+    if [[ "$(uname -s)" == Darwin ]]; then gc_flag="-Wl,-dead_strip"; fi
     for demo in audio low_power ble wifi; do
         "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
             -ffunction-sections -fdata-sections -Itests/demo_stubs -Imain \
-            "tests/test_demo_${demo}_runtime.c" -Wl,--gc-sections \
+            "tests/test_demo_${demo}_runtime.c" "${gc_flag}" \
             -o "${test_dir}/test_demo_${demo}_runtime"
         "${test_dir}/test_demo_${demo}_runtime"
     done
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_ninehalf_model.c main/ninehalf_model.c \
+        -o "${test_dir}/test_ninehalf_model"
+    "${test_dir}/test_ninehalf_model"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Itests/store_stubs -Imain \
+        tests/test_ninehalf_store.c main/ninehalf_store.c \
+        -o "${test_dir}/test_ninehalf_store"
+    "${test_dir}/test_ninehalf_store"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain tests/test_ninehalf_wifi.c main/ninehalf_wifi.c -o "${test_dir}/test_ninehalf_wifi"
+    "${test_dir}/test_ninehalf_wifi"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        -I"${IDF_PATH}/components/json/cJSON" \
+        tests/test_ninehalf_stream.c main/ninehalf_stream.c main/ninehalf_model.c \
+        "${IDF_PATH}/components/json/cJSON/cJSON.c" -o "${test_dir}/test_ninehalf_stream"
+    "${test_dir}/test_ninehalf_stream"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_deep_sleep_contract.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_verify_firmware.py
@@ -85,14 +102,14 @@ run_firmware_checks() (
         idf.py -B "${validation_build_dir}" \
         -D "SDKCONFIG=${validation_build_dir}/sdkconfig" build
     idf.py -B "${validation_build_dir}" merge-bin \
-        -o "${validation_build_dir}/FoloToy-AI-Passport-full.bin"
+        -o "${validation_build_dir}/ai-passport-ninehalf-full.bin"
     python3 tools/verify_firmware.py "${validation_build_dir}"
     PYTHONDONTWRITEBYTECODE=1 python3 tools/archive_firmware.py create \
         "${validation_build_dir}" --archive-root "${repo_root}/build/firmware"
     mkdir -p "${repo_root}/build"
     install -m 0644 \
-        "${validation_build_dir}/FoloToy-AI-Passport-full.bin" \
-        "${repo_root}/build/FoloToy-AI-Passport-full.bin"
+        "${validation_build_dir}/ai-passport-ninehalf-full.bin" \
+        "${repo_root}/build/ai-passport-ninehalf-full.bin"
     echo "Firmware build: PASS"
 )
 

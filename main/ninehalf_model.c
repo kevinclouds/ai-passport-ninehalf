@@ -1,0 +1,92 @@
+#include "ninehalf_model.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+const char *const nt_zodiac_names[12] = {"鼠", "牛", "虎", "兔", "龍", "蛇",
+                                         "馬", "羊", "猴", "雞", "狗", "豬"};
+int nt_zodiac(const char *name) {
+    for (int i = 0; i < 12; i++)
+        if (!strcmp(name, nt_zodiac_names[i]))
+            return i;
+    const char *sc[] = {"龙", "马", "鸡", "猪"};
+    const int ids[] = {4, 6, 9, 11};
+    for (int i = 0; i < 4; i++)
+        if (!strcmp(name, sc[i]))
+            return ids[i];
+    return -1;
+}
+int32_t nt_day(const char *s) {
+    int y, m, d;
+    if (sscanf(s, "%d-%d-%d", &y, &m, &d) != 3 || y < 2020 || m < 1 || m > 12 || d < 1 || d > 31)
+        return -1;
+    const int days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    int limit = days[m - 1] + (m == 2 && y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
+    if (d > limit)
+        return -1;
+    y -= m <= 2;
+    int era = y / 400;
+    unsigned yo = y - era * 400;
+    unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    return era * 146097 + (int)(yo * 365 + yo / 4 - yo / 100 + doy) - 719468;
+}
+static int compare(const void *a, const void *b) {
+    return strcmp(((const nt_record_t *)b)->timestamp, ((const nt_record_t *)a)->timestamp);
+}
+void nt_merge_records(nt_model_t *m, const nt_record_t *r, size_t n) {
+    for (size_t j = 0; j < n; j++) {
+        size_t i = 0;
+        while (i < m->count && strcmp(m->records[i].issue, r[j].issue))
+            i++;
+        if (i < m->count)
+            m->records[i] = r[j];
+        else if (m->count < NT_RECORDS)
+            m->records[m->count++] = r[j];
+        else if (strcmp(r[j].timestamp, m->records[m->count - 1].timestamp) > 0)
+            m->records[m->count - 1] = r[j];
+        qsort(m->records, m->count, sizeof(nt_record_t), compare);
+    }
+}
+void nt_stats(const nt_model_t *m, bool special, int32_t today, nt_stat_t out[12]) {
+    memset(out, 0, 12 * sizeof(*out));
+    for (int z = 0; z < 12; z++) {
+        out[z].misses = m->count;
+        bool streak = true;
+        for (size_t i = 0; i < m->count; i++) {
+            bool hit = false;
+            for (int p = special ? 6 : 0; p < 7 - (special ? 0 : 1); p++)
+                if (m->records[i].zodiac[p] == z)
+                    hit = true;
+            if (hit) {
+                out[z].count++;
+                if (out[z].misses == m->count)
+                    out[z].misses = i;
+                if (m->records[i].day >= today - 6 && m->records[i].day <= today)
+                    out[z].week++;
+                if (streak)
+                    out[z].streak++;
+            } else
+                streak = false;
+        }
+    }
+}
+int64_t nt_countdown(int64_t now, bool today_received) {
+    int64_t day = (now + 8 * 3600) / 86400;
+    int64_t target = day * 86400 + 13 * 3600 + 30 * 60 + (today_received ? 86400 : 0);
+    return target > now ? target - now : 0;
+}
+
+int nt_focus_step(int focus, int delta, int first, int last) {
+    int next = focus + delta;
+    if (next < first)
+        return first;
+    if (next > last)
+        return last;
+    return next;
+}
+
+bool nt_current_pending(const nt_model_t *m, int64_t now) {
+    if (now < 1700000000 || !m->count)
+        return false;
+    int64_t local = now + 8 * 3600;
+    return m->records[0].day < local / 86400 && local % 86400 >= 20 * 3600 + 30 * 60;
+}
