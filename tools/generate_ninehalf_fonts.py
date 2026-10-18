@@ -17,7 +17,7 @@ missing = [hex(point) for point in points if point not in cmap]
 assert not missing, missing
 
 output = ['#include "lvgl.h"']
-sizes = [8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 20, 24]
+sizes = [8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 24]
 scale = 4
 font_specs = [(f"nt_font_{size}", size, points) for size in sizes]
 font_specs.append(("nt_wifi_font_13", 13, sorted(point for point in cmap if 32 <= point < 65536)))

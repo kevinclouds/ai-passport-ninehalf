@@ -32,8 +32,37 @@ int main(void) {
     assert(out[8].week == 0);
     assert(nt_zodiac("马") == 6 && nt_zodiac("馬") == 6 && nt_zodiac("invalid") == -1);
     int64_t now = 17700 * 86400 + 13 * 3600 + 30 * 60;
+    assert(nt_countdown(now, false) == 120);
+    now += 120;
     assert(nt_countdown(now, false) == 0);
     assert(nt_countdown(now, true) == 86400);
+    assert(!nt_idle_should_blank(60000000, 0, 60));
+    assert(nt_idle_should_blank(60000001, 0, 60));
+    assert(!nt_idle_should_blank(900000000, 0, 0));
+    assert(!nt_idle_should_blank(29999999, 0, 30));
+    assert(nt_idle_should_blank(30000001, 0, 30));
+    assert(nt_history_budget(21 * 3600 + 29 * 60 + 59) == 1);
+    assert(nt_history_budget(21 * 3600 + 30 * 60) == 0);
+    assert(nt_history_budget(21 * 3600 + 30 * 60 + 1) == 0);
+    assert(nt_history_budget(21 * 3600 + 39 * 60 + 59) == 0);
+    assert(nt_history_budget(21 * 3600 + 40 * 60) == 120);
+    assert(nt_history_budget(20 * 3600) == 120);
+    assert(nt_poll_interval(21 * 3600 + 29 * 60 + 59, false, true, 0) == 1);
+    assert(nt_poll_interval(21 * 3600 + 30 * 60, false, true, 0) == 0);
+    assert(nt_poll_interval(21 * 3600 + 39 * 60 + 59, true, true, 0) == 0);
+    assert(nt_poll_interval(21 * 3600 + 40 * 60, false, true, 0) == UINT32_MAX);
+    assert(nt_poll_interval(12 * 3600, true, true, 0) == 34200);
+    assert(nt_poll_interval(22 * 3600, false, true, 0) == UINT32_MAX);
+    assert(nt_poll_interval(21 * 3600 + 32 * 60, false, false, 1) == 1);
+    assert(nt_poll_interval(21 * 3600 + 32 * 60, true, false, 2) == 2);
+    assert(nt_poll_interval(21 * 3600 + 32 * 60, true, false, 3) == 5);
+
+    nt_live_t live = {.record = {.issue = "2026278", .number = {"02", "21"}},
+                      .revealed = 2, .present = true};
+    nt_live_t stale = {.record = {.issue = "2026278", .number = {"02"}},
+                       .revealed = 1, .present = true};
+    assert(!nt_live_merge(&live, &stale));
+    assert(live.revealed == 2 && !strcmp(live.record.number[1], "21"));
     assert(nt_focus_step(0, -1, -1, 28) == -1);
     assert(nt_focus_step(-1, -1, -1, 28) == -1);
     assert(nt_focus_step(28, 1, -1, 28) == 28);
@@ -41,7 +70,7 @@ int main(void) {
     assert(nt_day("2026-10-04 21:32:32") == 20730);
     assert(nt_day("2026-02-30") == -1);
     assert(nt_day("2024-02-29") >= 0);
-    int64_t cutoff = 20731LL * 86400 + 12 * 3600 + 30 * 60;
+    int64_t cutoff = 20731LL * 86400 + 12 * 3600 + 32 * 60;
     assert(!nt_current_pending(&m, cutoff - 1));
     assert(nt_current_pending(&m, cutoff));
     assert(nt_current_pending(&m, cutoff + 7200));

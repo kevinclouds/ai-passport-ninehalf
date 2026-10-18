@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "esp_rom_sys.h"
 #include <math.h>
 #include <stdlib.h>
@@ -20,12 +21,13 @@ typedef struct {
     bsp_btn_t key;
     bsp_btn_ev_t event;
     nt_model_t *snapshot;
+    nt_live_t live;
 } message_t;
 static QueueHandle_t events;
 static nt_model_t model;
 static void button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
     (void)user;
-    if (ev != BSP_BTN_CLICK && ev != BSP_BTN_LONG)
+    if (ev != BSP_BTN_PRESS && ev != BSP_BTN_CLICK && ev != BSP_BTN_LONG)
         return;
     message_t m = {.kind = 1, .key = btn, .event = ev};
     xQueueSend(events, &m, 0);
@@ -46,6 +48,10 @@ void nt_app_network_result(const nt_model_t *snapshot, bool success) {
 }
 void nt_app_history_result(const nt_model_t *snapshot) {
     network_result(snapshot, 4);
+}
+void nt_app_live_result(const nt_live_t *live) {
+    message_t m = {.kind = 7, .live = *live};
+    xQueueSend(events, &m, pdMS_TO_TICKS(100));
 }
 void nt_app_sync_started(void) {
     network_result(NULL, 5);
@@ -82,7 +88,7 @@ void app_main(void) {
     bsp_battery_init();
     bsp_audio_set_volume(model.settings.volume);
     bsp_display_backlight(model.settings.brightness);
-    events = xQueueCreate(4, sizeof(message_t));
+    events = xQueueCreate(8, sizeof(message_t));
     if (!events)
         return;
     if (bsp_lvgl_lock(-1)) {
@@ -95,27 +101,52 @@ void app_main(void) {
     if (!m)
         return;
     bool initial = true;
+    nt_live_t current_live = {0};
+    int64_t last_input_us = esp_timer_get_time(), woke_at_us = 0;
+    bsp_btn_t wake_key = BSP_BTN_OK;
+    bool screen_off = false;
     for (;;) {
         if (xQueueReceive(events, m, pdMS_TO_TICKS(1000))) {
             if (m->kind == 1) {
-                if (bsp_lvgl_lock(-1)) {
+                int64_t now_us = esp_timer_get_time();
+                last_input_us = now_us;
+                if (m->event == BSP_BTN_PRESS && screen_off) {
+                    screen_off = false;
+                    woke_at_us = now_us;
+                    wake_key = m->key;
+                    bsp_display_backlight(model.settings.brightness);
+                    if (bsp_lvgl_lock(-1)) {
+                        nt_ui_render();
+                        bsp_lvgl_unlock();
+                    }
+                } else if (m->event != BSP_BTN_PRESS &&
+                           !(woke_at_us && m->key == wake_key &&
+                             now_us - woke_at_us < 2000000) && bsp_lvgl_lock(-1)) {
                     nt_ui_key(m->key, m->event);
                     bsp_lvgl_unlock();
                 }
+                if (m->event != BSP_BTN_PRESS && m->key == wake_key)
+                    woke_at_us = 0;
             } else if (m->kind == 5 || m->kind == 6) {
                 if (bsp_lvgl_lock(-1)) {
                     if (m->kind == 5)
                         nt_ui_sync_begin();
                     else
                         nt_ui_sync_state(true);
-                    nt_ui_render();
                     bsp_lvgl_unlock();
                 }
             } else if (m->kind == 3) {
                 if (bsp_lvgl_lock(-1)) {
                     nt_ui_sync_state(false);
-                    nt_ui_render();
                     bsp_lvgl_unlock();
+                }
+            } else if (m->kind == 7) {
+                if (nt_live_merge(&current_live, &m->live)) {
+                    initial = false;
+                    if (bsp_lvgl_lock(-1)) {
+                        nt_ui_set_live(&current_live);
+                        bsp_lvgl_unlock();
+                    }
                 }
             } else if (m->kind == 2 || m->kind == 4) {
                 bool changed = false, notify = false;
@@ -148,14 +179,23 @@ void app_main(void) {
                     }
                 }
                 if (bsp_lvgl_lock(-1)) {
-                    nt_ui_render();
+                    if (current_live.present && model.count &&
+                        strcmp(model.records[0].issue, current_live.record.issue) >= 0) {
+                        current_live = (nt_live_t){0};
+                        nt_ui_set_live(NULL);
+                    } else if (changed)
+                        nt_ui_render();
                     bsp_lvgl_unlock();
                 }
             }
             free(m->snapshot);
             m->snapshot = NULL;
         }
-        if (bsp_lvgl_lock(-1)) {
+        if (!screen_off && nt_idle_should_blank(esp_timer_get_time(), last_input_us, nt_store_sleep_seconds())) {
+            bsp_display_backlight(0);
+            screen_off = true;
+        }
+        if (!screen_off && bsp_lvgl_lock(-1)) {
             static bool online;
             bool current = nt_wifi_online();
             if (current != online) {

@@ -72,6 +72,92 @@ done:
     cJSON_Delete(o);
     return valid;
 }
+static bool partial_tokens(const char *s, char out[7][16], int *count) {
+    *count = 0;
+    if (!s || strlen(s) > 110)
+        return false;
+    while (*s && *count < 7) {
+        const char *end = strchr(s, ',');
+        size_t len = end ? (size_t)(end - s) : strlen(s);
+        if (!len) {
+            while (*s == ',')
+                s++;
+            return !*s && *count > 0;
+        }
+        if (len >= 16)
+            return false;
+        memcpy(out[*count], s, len);
+        out[(*count)++][len] = 0;
+        if (!end)
+            return true;
+        s = end + 1;
+    }
+    return !*s && *count > 0;
+}
+bool nt_parse_live(const char *json, nt_live_t *out) {
+    cJSON *o = cJSON_Parse(json);
+    if (!o)
+        return false;
+    bool valid = false;
+    const char *issue = field(o, "expect"), *time = field(o, "openTime");
+    char nums[7][16] = {{0}}, waves[7][16] = {{0}}, zs[7][16] = {{0}};
+    int n = 0, wn = 0, zn = 0;
+    const char *codes = field(o, "openCode");
+    if (!issue || !*issue || strlen(issue) >= sizeof(out->record.issue) ||
+        (codes && *codes && !partial_tokens(codes, nums, &n)))
+        goto done;
+    for (const char *p = issue; *p; p++)
+        if (*p < '0' || *p > '9')
+            goto done;
+    if (field(o, "wave") && *field(o, "wave") &&
+        !partial_tokens(field(o, "wave"), waves, &wn))
+        goto done;
+    if (field(o, "zodiac") && *field(o, "zodiac") &&
+        !partial_tokens(field(o, "zodiac"), zs, &zn))
+        goto done;
+    memset(out, 0, sizeof(*out));
+    out->record.day = -1;
+    if (time && *time) {
+        if (strlen(time) != 19 || nt_day(time) < 0)
+            goto done;
+        strcpy(out->record.timestamp, time);
+        out->record.day = nt_day(time);
+    }
+    strcpy(out->record.issue, issue);
+    for (int i = 0; i < n; i++) {
+        char *end;
+        long number = strtol(nums[i], &end, 10);
+        if (*end || strlen(nums[i]) > 2 || number < 1 || number > 49)
+            goto done;
+        for (int j = 0; j < i; j++)
+            if (atoi(out->record.number[j]) == number)
+                goto done;
+        strcpy(out->record.number[i], nums[i]);
+        if (i < wn) {
+            int w = !strcmp(waves[i], "red")     ? 0
+                    : !strcmp(waves[i], "blue")  ? 1
+                    : !strcmp(waves[i], "green") ? 2
+                                                  : -1;
+            if (w < 0)
+                goto done;
+            out->record.wave[i] = w;
+            out->wave_mask |= 1U << i;
+        }
+        if (i < zn) {
+            int z = nt_zodiac(zs[i]);
+            if (z < 0)
+                goto done;
+            out->record.zodiac[i] = z;
+            out->zodiac_mask |= 1U << i;
+        }
+    }
+    out->revealed = n;
+    out->present = true;
+    valid = true;
+done:
+    cJSON_Delete(o);
+    return valid;
+}
 /* Validate JSON tokens while retaining only individual record objects. */
 static bool json_value(nt_stream_t *s) {
     if (!s->json_depth) {
@@ -286,6 +372,14 @@ void nt_stream_feed(nt_stream_t *s, const char *data, size_t length) {
             if (!s->overflow && nt_parse_record(s->object, &r)) {
                 nt_merge_records(&s->result, &r, 1);
                 s->records++;
+            } else if (!s->overflow && strstr(s->object, "\"expect\"")) {
+                nt_live_t live;
+                if (!nt_parse_live(s->object, &live)) {
+                    s->failed = true;
+                    return;
+                }
+                if (!s->live.present || strcmp(live.record.issue, s->live.record.issue) >= 0)
+                    s->live = live;
             } else if (strstr(s->object, "\"expect\"")) {
                 s->failed = true;
                 return;
@@ -297,5 +391,6 @@ void nt_stream_feed(nt_stream_t *s, const char *data, size_t length) {
 
 bool nt_stream_finish(const nt_stream_t *s) {
     return !s->failed && !s->json_lex && !s->json_depth && s->json_root && s->started &&
-           s->finished && !s->depth && !s->quote && !s->used && s->result.count;
+           s->finished && !s->depth && !s->quote && !s->used &&
+           (s->result.count || s->live.present);
 }

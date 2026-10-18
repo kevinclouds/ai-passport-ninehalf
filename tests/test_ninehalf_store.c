@@ -56,10 +56,48 @@ const char *esp_err_to_name(esp_err_t error) {
     return "error";
 }
 
+static bool has_sleep;
+static uint16_t saved_delay;
+static uint8_t saved_enabled;
+esp_err_t nvs_get_u16(nvs_handle_t h, const char *key, uint16_t *v) {
+    assert(h == 1 && !strcmp(key, "sleep_delay"));
+    if (!has_sleep) return -1;
+    *v = saved_delay;
+    return ESP_OK;
+}
+esp_err_t nvs_get_u8(nvs_handle_t h, const char *key, uint8_t *v) {
+    assert(h == 1 && !strcmp(key, "sleep_enabled"));
+    if (!has_sleep) return -1;
+    *v = saved_enabled;
+    return ESP_OK;
+}
+esp_err_t nvs_set_u16(nvs_handle_t h, const char *key, uint16_t v) {
+    assert(h == 1 && !strcmp(key, "sleep_delay"));
+    saved_delay = v;
+    return ESP_OK;
+}
+esp_err_t nvs_set_u8(nvs_handle_t h, const char *key, uint8_t v) {
+    assert(h == 1 && !strcmp(key, "sleep_enabled"));
+    saved_enabled = v;
+    has_sleep = true;
+    return ESP_OK;
+}
+
 int main(void) {
     nt_model_t loaded;
     nt_store_load(&loaded);
     assert(loaded.count == 0 && loaded.settings.volume == 60 && writes == 0);
+
+    assert(nt_store_sleep_seconds() == 60);
+    nt_store_sleep_set(false, 300);
+    nt_store_load(&loaded);
+    assert(nt_store_sleep_seconds() == 0 && nt_store_sleep_delay() == 300);
+    nt_store_sleep_set(true, 120);
+    nt_store_load(&loaded);
+    assert(nt_store_sleep_seconds() == 120);
+    saved_delay = 99;
+    nt_store_load(&loaded);
+    assert(nt_store_sleep_seconds() == 60);
 
     old_slot.version = 1;
     old_slot.model.settings.volume = 42;

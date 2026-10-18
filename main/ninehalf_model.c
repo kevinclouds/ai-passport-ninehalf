@@ -71,8 +71,54 @@ void nt_stats(const nt_model_t *m, bool special, int32_t today, nt_stat_t out[12
 }
 int64_t nt_countdown(int64_t now, bool today_received) {
     int64_t day = (now + 8 * 3600) / 86400;
-    int64_t target = day * 86400 + 13 * 3600 + 30 * 60 + (today_received ? 86400 : 0);
+    int64_t target = day * 86400 + 13 * 3600 + 32 * 60 + (today_received ? 86400 : 0);
     return target > now ? target - now : 0;
+}
+bool nt_idle_should_blank(int64_t now_us, int64_t last_input_us, unsigned seconds) {
+    return seconds && now_us - last_input_us > (int64_t)seconds * 1000000;
+}
+unsigned nt_history_budget(int seconds_beijing) {
+    const int start = 21 * 3600 + 30 * 60, end = 21 * 3600 + 40 * 60;
+    if (seconds_beijing >= start && seconds_beijing < end)
+        return 0;
+    if (seconds_beijing < start && start - seconds_beijing < 120)
+        return start - seconds_beijing;
+    return 120;
+}
+unsigned nt_poll_interval(int seconds_beijing, bool today_done, bool success, unsigned failures) {
+    (void)today_done;
+    if (!success)
+        return failures <= 1 ? 1 : failures == 2 ? 2 : 5;
+    const int start = 21 * 3600 + 30 * 60, end = 21 * 3600 + 40 * 60;
+    if (seconds_beijing < start)
+        return start - seconds_beijing;
+    if (seconds_beijing < end)
+        return 0;
+    return UINT32_MAX;
+}
+bool nt_live_merge(nt_live_t *current, const nt_live_t *incoming) {
+    if (!incoming->present)
+        return false;
+    int order = current->present ? strcmp(incoming->record.issue, current->record.issue) : 1;
+    if (order < 0 || (order == 0 && incoming->revealed < current->revealed))
+        return false;
+    nt_live_t merged = *incoming;
+    if (order == 0)
+        for (int i = 0; i < merged.revealed; i++)
+            if (!strcmp(merged.record.number[i], current->record.number[i])) {
+                if (!(merged.wave_mask & (1U << i)) && (current->wave_mask & (1U << i))) {
+                    merged.wave_mask |= 1U << i;
+                    merged.record.wave[i] = current->record.wave[i];
+                }
+                if (!(merged.zodiac_mask & (1U << i)) && (current->zodiac_mask & (1U << i))) {
+                    merged.zodiac_mask |= 1U << i;
+                    merged.record.zodiac[i] = current->record.zodiac[i];
+                }
+            }
+    if (!memcmp(current, &merged, sizeof(merged)))
+        return false;
+    *current = merged;
+    return true;
 }
 
 int nt_focus_step(int focus, int delta, int first, int last) {
@@ -88,5 +134,5 @@ bool nt_current_pending(const nt_model_t *m, int64_t now) {
     if (now < 1700000000 || !m->count)
         return false;
     int64_t local = now + 8 * 3600;
-    return m->records[0].day < local / 86400 && local % 86400 >= 20 * 3600 + 30 * 60;
+    return m->records[0].day < local / 86400 && local % 86400 >= 20 * 3600 + 32 * 60;
 }

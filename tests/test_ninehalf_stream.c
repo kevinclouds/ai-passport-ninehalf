@@ -14,6 +14,31 @@ int main(void) {
     assert(nt_stream_finish(&s));
     assert(s.result.count == 1);
     assert(s.result.records[0].zodiac[6] == 8);
+    nt_stream_t partial = {0};
+    const char *drawing = "[{\"expect\":\"2026278\",\"openTime\":\"2026-10-05 21:32:00\","
+                          "\"openCode\":\"02,21,17\",\"wave\":\"red,green,green\","
+                          "\"zodiac\":\"蛇,狗,虎\"}]";
+    nt_stream_feed(&partial, drawing, strlen(drawing));
+    assert(nt_stream_finish(&partial));
+    assert(partial.result.count == 0);
+    assert(partial.live.revealed == 3);
+    assert(!strcmp(partial.live.record.number[0], "02"));
+    assert(!strcmp(partial.live.record.number[2], "17"));
+    assert(partial.live.record.number[3][0] == 0);
+    assert(partial.live.record.zodiac[0] == 5);
+    assert(partial.live.record.wave[0] == 0);
+    nt_live_t no_metadata;
+    assert(nt_parse_live("{\"expect\":\"2026279\",\"openTime\":\"2026-10-06 21:32:00\","
+                         "\"openCode\":\"41,23,,,,,\",\"wave\":\"\",\"zodiac\":\"\"}",
+                         &no_metadata));
+    assert(no_metadata.revealed == 2 && no_metadata.wave_mask == 0 &&
+           no_metadata.zodiac_mask == 0);
+    nt_stream_t before_first = {0};
+    const char *not_started = "[{\"expect\":\"2026280\","
+                              "\"openTime\":\"2026-10-07 21:32:00\",\"openCode\":\"\"}]";
+    nt_stream_feed(&before_first, not_started, strlen(not_started));
+    assert(nt_stream_finish(&before_first));
+    assert(before_first.live.present && before_first.live.revealed == 0);
     nt_stat_t stats[12];
     nt_stats(&s.result, false, s.result.records[0].day, stats);
     assert(stats[8].count == 1);

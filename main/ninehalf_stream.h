@@ -13,7 +13,9 @@ typedef struct {
     size_t token_used;
     bool json_root, json_key, json_escape;
     nt_model_t result;
+    nt_live_t live;
 } nt_stream_t;
 void nt_stream_feed(nt_stream_t *s, const char *data, size_t length);
 bool nt_parse_record(const char *json, nt_record_t *out);
+bool nt_parse_live(const char *json, nt_live_t *out);
 bool nt_stream_finish(const nt_stream_t *s);

@@ -1,4 +1,5 @@
 #include "lvgl.h"
+#include "src/misc/lv_text_private.h"
 #include "ninehalf_ui.h"
 #include "ninehalf_stream.h"
 #include "ninehalf_wifi.h"
@@ -40,6 +41,14 @@ void nt_network_provision(void) {
     provision_calls++;
     provisioning_pending = true;
 }
+static unsigned sleep_delay = 60;
+static bool sleep_enabled = true;
+unsigned nt_store_sleep_seconds(void) { return sleep_enabled ? sleep_delay : 0; }
+unsigned nt_store_sleep_delay(void) { return sleep_delay; }
+void nt_store_sleep_set(bool enabled, unsigned seconds) {
+    sleep_enabled = enabled;
+    sleep_delay = seconds;
+}
 void nt_store_save(const nt_model_t *m) {
 }
 void nt_wifi_view(nt_wifi_view_t *v) {
@@ -77,6 +86,27 @@ static void flush(lv_display_t *d, const lv_area_t *a, uint8_t *p) {
 }
 static void check_labels(lv_obj_t *obj) {
     if (lv_obj_check_type(obj, &lv_label_class)) {
+        const lv_font_t *face = lv_obj_get_style_text_font(obj, 0);
+        const char *text = lv_label_get_text(obj);
+        for (uint32_t index = 0; text[index];) {
+            uint32_t code = lv_text_encoded_next(text, &index);
+            lv_font_glyph_dsc_t glyph;
+            if (code >= 32 && !face->get_glyph_dsc(face, &glyph, code, 0)) {
+                fprintf(stderr, "Missing glyph: U+%04X in %s\n", (unsigned)code, text);
+                abort();
+            }
+            if ((strlen(text) == 3 && strstr("金木水火土", text)) || !strcmp(text, "家禽") ||
+                !strcmp(text, "野兽")) {
+                int top = lv_obj_get_style_pad_top(obj, 0) + face->line_height -
+                          face->base_line - glyph.box_h - glyph.ofs_y;
+                int bottom = top + glyph.box_h;
+                if (top < 0 || bottom > lv_obj_get_height(obj)) {
+                    fprintf(stderr, "Clipped element glyph: %s (%d..%d in height %d)\n",
+                            text, top, bottom, (int)lv_obj_get_height(obj));
+                    abort();
+                }
+            }
+        }
         lv_point_t size;
         lv_text_get_size(&size, lv_label_get_text(obj), lv_obj_get_style_text_font(obj, 0),
                          lv_obj_get_style_text_letter_space(obj, 0), 0, LV_COORD_MAX,
@@ -108,6 +138,19 @@ static bool has_text(lv_obj_t *obj, const char *text) {
         if (has_text(lv_obj_get_child(obj, i), text))
             return true;
     return false;
+}
+static void reference_numbers(lv_obj_t *obj, bool seen[50]) {
+    if (lv_obj_check_type(obj, &lv_label_class) && lv_obj_get_height(obj) == 28) {
+        const char *text = lv_label_get_text(obj);
+        if (strlen(text) == 2 && text[0] >= '0' && text[0] <= '4' &&
+            text[1] >= '0' && text[1] <= '9') {
+            int number = atoi(text);
+            assert(number >= 1 && number <= 49);
+            seen[number] = true;
+        }
+    }
+    for (unsigned i = 0; i < lv_obj_get_child_count(obj); i++)
+        reference_numbers(lv_obj_get_child(obj, i), seen);
 }
 static int header_bars(void) {
     lv_obj_t *root = lv_obj_get_child(lv_screen_active(), 0);
@@ -150,6 +193,7 @@ static void frame(const char *name) {
 }
 LV_FONT_DECLARE(nt_wifi_font_13);
 LV_FONT_DECLARE(nt_font_10);
+LV_FONT_DECLARE(nt_font_16);
 int main(int argc, char **argv) {
     setbuf(stdout, NULL);
     puts("init");
@@ -191,6 +235,7 @@ int main(int argc, char **argv) {
     printf("pool %zu free %zu\n", pre.total_size, pre.free_size);
     lv_font_glyph_dsc_t glyph;
     assert(nt_font_10.get_glyph_dsc(&nt_font_10, &glyph, 0x9F98, 0) == false);
+    assert(nt_font_16.get_glyph_dsc(&nt_font_16, &glyph, 0x6447, 0));
     assert(nt_font_10.get_glyph_dsc(&nt_font_10, &glyph, 0x9F8D, 0));
     assert(nt_wifi_font_13.get_glyph_dsc(&nt_wifi_font_13, &glyph, 0x9F98, 0));
     assert(nt_wifi_font_13.get_glyph_dsc(&nt_wifi_font_13, &glyph, 0x79BB, 0));
@@ -219,7 +264,7 @@ int main(int argc, char **argv) {
     assert(has_text(lv_screen_active(), "本期记录"));
     frame("home");
     time_t before_wait = mock_now;
-    mock_now = ((before_wait + 8 * 3600) / 86400) * 86400 + 12 * 3600 + 30 * 60 - 1;
+    mock_now = ((before_wait + 8 * 3600) / 86400) * 86400 + 12 * 3600 + 32 * 60 - 1;
     nt_ui_clock();
     frame("before-cutoff");
     assert(pixels[(77 * 240 + 25) * 3] > 150 &&
@@ -238,7 +283,20 @@ int main(int argc, char **argv) {
     mock_now = before_wait + 3 * 3600;
     nt_ui_clock();
     frame("waiting");
-    assert(has_text(lv_screen_active(), "等待揭晓"));
+    assert(has_text(lv_screen_active(), "正在摇号"));
+    nt_live_t live = {.record = {.issue = "2026278", .timestamp = "2026-10-05 21:32:00",
+                                  .day = 20731}, .revealed = 2, .wave_mask = 3, .present = true,
+                      .zodiac_mask = 3};
+    strcpy(live.record.number[0], "02");
+    strcpy(live.record.number[1], "21");
+    live.record.wave[0] = 0;
+    live.record.wave[1] = 2;
+    live.record.zodiac[0] = 5;
+    live.record.zodiac[1] = 10;
+    nt_ui_set_live(&live);
+    frame("partial-live");
+    assert(has_text(lv_screen_active(), "2026278"));
+    nt_ui_set_live(NULL);
     mock_now = before_wait;
     nt_ui_clock();
     frame("home");
@@ -293,6 +351,47 @@ int main(int argc, char **argv) {
             nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
         nt_ui_key(BSP_BTN_UP, BSP_BTN_LONG);
         frame("observe");
+        int refresh_before = refresh_calls;
+        nt_ui_key(BSP_BTN_UP, BSP_BTN_LONG);
+        assert(has_text(lv_screen_active(), "生肖号码"));
+        assert(has_text(lv_screen_active(), "2026"));
+        assert(has_text(lv_screen_active(), "马"));
+        assert(has_text(lv_screen_active(), "01 / 12"));
+        frame("zodiac");
+        check_number_center(73, 74, 28, 28);
+        bool seen[50] = {false};
+        reference_numbers(lv_screen_active(), seen);
+        for (int i = 0; i < 11; i++) {
+            nt_ui_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+            lv_refr_now(NULL);
+            check_labels(lv_screen_active());
+            reference_numbers(lv_screen_active(), seen);
+        }
+        assert(has_text(lv_screen_active(), "12 / 12"));
+        assert(has_text(lv_screen_active(), "羊"));
+        for (int i = 1; i <= 49; i++)
+            assert(seen[i]);
+        frame("zodiac-last");
+        nt_ui_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        assert(has_text(lv_screen_active(), "01 / 12"));
+        nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        assert(has_text(lv_screen_active(), "12 / 12"));
+        nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
+        assert(has_text(lv_screen_active(), "生肖号码"));
+        nt_ui_key(BSP_BTN_OK, BSP_BTN_LONG);
+        assert(has_text(lv_screen_active(), "近30期观察"));
+        nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        assert(has_text(lv_screen_active(), "生肖号码"));
+        nt_ui_key(BSP_BTN_OK, BSP_BTN_LONG);
+        nt_ui_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        nt_ui_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        nt_ui_key(BSP_BTN_UP, BSP_BTN_LONG);
+        nt_ui_key(BSP_BTN_OK, BSP_BTN_LONG);
+        nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        assert(has_text(lv_screen_active(), "近30期观察"));
+        nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
+        assert(has_text(lv_screen_active(), "近30期观察"));
+        assert(refresh_calls == refresh_before);
         nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
         nt_ui_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
         nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
@@ -356,6 +455,20 @@ int main(int argc, char **argv) {
     assert(provision_calls == 1);
     nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
     frame("settings-up-first");
+    assert(has_text(lv_screen_active(), "睡眠时间"));
+    nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    assert(sleep_delay == 120);
+    nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    assert(!sleep_enabled);
+    nt_ui_key(BSP_BTN_DOWN, BSP_BTN_CLICK);
+    nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    assert(sleep_delay == 120);
+    frame("sleep-disabled");
+    nt_ui_key(BSP_BTN_UP, BSP_BTN_CLICK);
+    nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    assert(sleep_enabled);
+    frame("sleep-settings");
     nt_ui_key(BSP_BTN_OK, BSP_BTN_LONG);
     nt_ui_key(BSP_BTN_DOWN, BSP_BTN_LONG);
     nt_ui_key(BSP_BTN_DOWN, BSP_BTN_CLICK);

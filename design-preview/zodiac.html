@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>NineHalf · 生肖号码表设计预览</title>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#202127;background:#f5f5f7;font-synthesis:none}
+    *{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}button:focus-visible{outline:3px solid #3165cb;outline-offset:3px}
+    main{max-width:930px;margin:auto;padding:36px 28px 50px}.eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;color:#6e7280;text-transform:uppercase}
+    h1{font-size:34px;letter-spacing:-.04em;margin:10px 0 12px}p{color:#626775;line-height:1.7;margin:0}.layout{display:grid;grid-template-columns:320px 1fr;gap:70px;align-items:center;margin-top:42px}
+    .stage{background:#e9ebf1;border-radius:30px;padding:30px 36px;width:max-content}.device{background:#28292d;border-radius:26px;padding:17px 13px 19px;box-shadow:0 17px 35px #14162125}
+    .screen{width:240px;height:320px;background:#f8f9fc;border-radius:4px;overflow:hidden;display:flex;flex-direction:column}.status{flex:none;height:24px;padding:6px 9px 0;display:flex;justify-content:space-between;font-size:10px;color:#656b78;letter-spacing:.01em}
+    .heading{flex:none;padding:1px 9px 7px}.heading-top{display:flex;align-items:baseline;justify-content:space-between}.heading h2{font-size:19px;line-height:23px;letter-spacing:-.035em;margin:0;font-weight:720}.year{font-size:11px;font-weight:650;color:#4762a0;background:#e8eefb;padding:2px 6px;border-radius:5px}.heading p{font-size:10px;line-height:13px;margin-top:2px;color:#707581}.legend{display:inline-flex;gap:2px;vertical-align:middle;margin-left:5px}.legend i{display:block;width:5px;height:5px;border-radius:50%}.legend i:nth-child(1){background:#cc3441}.legend i:nth-child(2){background:#315fc2}.legend i:nth-child(3){background:#1f805a}
+    .list{flex:1;min-height:0;overflow:auto;scrollbar-width:none;padding:0 8px 4px;scroll-behavior:smooth}.list::-webkit-scrollbar{display:none}
+    .card{border-bottom:1px solid #e4e7ee;margin:0;padding:4px 5px;min-height:52px;transition:background .15s,border-color .15s}.card.selected{background:#eaf1ff;border:1px solid #8da9df;border-radius:7px;padding:3px 4px}
+    .card-main{display:flex;gap:5px;align-items:center}.identity{flex:0 0 55px;display:flex;align-items:center;gap:4px;border-right:1px solid #dfe4ee}.identity-meta{flex:0 0 13px;display:flex;flex-direction:column;align-items:center;gap:2px;color:#6b7690;font-size:11px;line-height:16px}.identity-main{display:flex;flex-direction:column;align-items:flex-start}.identity strong{font-size:19px;line-height:24px;letter-spacing:-.04em}.identity .type{font-size:11px;line-height:13px;color:#626d7e;white-space:nowrap}.selected .identity{border-color:#cbd8ee}
+    .numbers{flex:1;display:flex;justify-content:space-between;gap:3px;min-width:0}.number{min-width:0;flex:1;text-align:center}.number b{display:flex;height:28px;align-items:center;justify-content:center;border-radius:5px;font-size:17px;line-height:1;color:white;font-variant-numeric:tabular-nums;letter-spacing:-.025em}.red b{background:#cc3441}.blue b{background:#315fc2}.green b{background:#1f805a}.number small{display:block;font-size:11px;line-height:13px;margin-top:2px;color:#4f5868}
+    .footer{flex:none;height:24px;background:#eff1f6;border-top:1px solid #e1e4eb;padding:0 9px;display:flex;align-items:center;justify-content:space-between;color:#626976;font-size:10px}
+    .keys{display:flex;justify-content:space-between;margin-top:16px}.keys button{border:0;border-radius:18px;background:#45474e;color:#fff;font-size:11px;font-weight:650;width:67px;height:34px}.keys button:active{transform:scale(.96)}
+    .notes h2{font-size:22px;letter-spacing:-.025em;margin:0 0 12px}.notes p{font-size:14px}.notes ul{margin:20px 0 0;padding-left:20px;color:#505562;font-size:14px;line-height:1.9}.notes .source{font-size:12px;color:#777d89;margin-top:24px}.notes a{color:#315fc2}
+    @media(max-width:700px){main{padding:24px 20px 40px}h1{font-size:28px}.layout{grid-template-columns:1fr;gap:28px;margin-top:27px}.stage{margin:auto}.notes{max-width:480px;margin:auto}}
+    @media(prefers-reduced-motion:reduce){.list{scroll-behavior:auto}.card{transition:none}}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">NineHalf · Design preview</div>
+    <h1>生肖号码表</h1>
+    <p>将参考图的 2026 年生肖、号码、波色与五行整理成设备上可逐项浏览的对照页。</p>
+    <div class="layout">
+      <div class="stage">
+        <div class="device">
+          <div class="screen">
+            <div class="status"><span>已连接 · ▂▄▆█</span><span>电量 86%</span></div>
+            <div class="heading"><div class="heading-top"><h2>生肖号码</h2><span class="year">2026</span></div><p>12 生肖 · 49 个号码 <span class="legend" aria-label="红蓝绿波色"><i></i><i></i><i></i></span> · 下方为五行</p></div>
+            <div class="list" id="list" aria-label="2026 年生肖号码表"></div>
+            <div class="footer"><span id="position">01 / 12</span><span>↑↓ 浏览 · 长按 OK 返回</span></div>
+          </div>
+          <div class="keys"><button type="button" id="up">UP</button><button type="button" id="down">DOWN</button><button type="button" id="ok">OK</button></div>
+        </div>
+      </div>
+      <div class="notes">
+        <h2>更清楚地一眼查找</h2>
+        <p>保留生肖、地支、阴阳类别、波色和五行同时可见；放大号码与属性文字，用细分隔线代替每行的卡片边框。一屏完整显示 4 行，下一行露出一部分提示还可以继续浏览。</p>
+        <ul><li>UP / DOWN：逐个生肖浏览，到底后再按 DOWN 回到顶部。</li><li>选中项仍有边框；观察页长按 UP 或顶部短按 UP 进入此页；长按 OK 返回观察页。</li><li>预览可用键盘 ↑ / ↓ 操作；点击下方 OK 模拟长按返回。</li></ul>
+        <p class="source">号码与属性按你提供的 2026 参考图录入；正式固件接入前需核对年份切换规则与号码映射。此页仅是设计预览。</p>
+        <p class="source"><a href="index.html?page=observe">返回现有设计预览</a></p>
+      </div>
+    </div>
+  </main>
+  <script>
+    const rows=[
+      {name:'马',branch:'午',yin:'阴',kind:'家禽',items:[['01','red','水'],['13','red','金'],['25','blue','木'],['37','blue','土'],['49','green','火']]},
+      {name:'蛇',branch:'巳',yin:'阴',kind:'野兽',items:[['02','red','火'],['14','blue','水'],['26','blue','金'],['38','green','木']]},
+      {name:'龙',branch:'辰',yin:'阴',kind:'野兽',items:[['03','blue','火'],['15','blue','水'],['27','green','金'],['39','green','木']]},
+      {name:'兔',branch:'卯',yin:'阳',kind:'野兽',items:[['04','blue','金'],['16','green','木'],['28','green','土'],['40','red','火']]},
+      {name:'虎',branch:'寅',yin:'阳',kind:'野兽',items:[['05','green','金'],['17','green','木'],['29','red','土'],['41','blue','火']]},
+      {name:'牛',branch:'丑',yin:'阴',kind:'家禽',items:[['06','green','土'],['18','red','火'],['30','red','水'],['42','blue','金']]},
+      {name:'鼠',branch:'子',yin:'阴',kind:'野兽',items:[['07','red','土'],['19','red','火'],['31','blue','水'],['43','green','金']]},
+      {name:'猪',branch:'亥',yin:'阴',kind:'家禽',items:[['08','red','木'],['20','blue','土'],['32','green','火'],['44','green','水']]},
+      {name:'狗',branch:'戌',yin:'阴',kind:'家禽',items:[['09','blue','木'],['21','green','土'],['33','green','火'],['45','red','水']]},
+      {name:'鸡',branch:'酉',yin:'阴',kind:'家禽',items:[['10','blue','火'],['22','green','水'],['34','red','金'],['46','red','木']]},
+      {name:'猴',branch:'申',yin:'阳',kind:'野兽',items:[['11','green','火'],['23','red','水'],['35','red','金'],['47','blue','木']]},
+      {name:'羊',branch:'未',yin:'阳',kind:'家禽',items:[['12','red','金'],['24','red','木'],['36','blue','土'],['48','blue','火']]}
+    ];
+    let selected=0;
+    const list=document.getElementById('list');
+    function render(){list.innerHTML=rows.map((row,index)=>`<div class="card ${index===selected?'selected':''}" data-index="${index}"><div class="card-main"><div class="identity"><div class="identity-meta"><span>${row.branch}</span><span>${row.yin}</span></div><div class="identity-main"><strong>${row.name}</strong><small class="type">${row.kind}</small></div></div><div class="numbers">${row.items.map(([number,wave,element])=>`<span class="number ${wave}"><b>${number}</b><small>${element}</small></span>`).join('')}</div></div></div>`).join('');document.getElementById('position').textContent=String(selected+1).padStart(2,'0')+' / 12';list.querySelector('.selected').scrollIntoView({block:'nearest'});}
+    function move(direction){selected=(selected+direction+rows.length)%rows.length;render()}
+    document.getElementById('up').onclick=()=>move(-1);document.getElementById('down').onclick=()=>move(1);document.getElementById('ok').onclick=()=>location.href='index.html?page=observe';
+    list.onclick=event=>{const card=event.target.closest('.card');if(card){selected=Number(card.dataset.index);render()}};
+    document.addEventListener('keydown',event=>{if(event.key==='ArrowUp'||event.key==='ArrowDown'){event.preventDefault();move(event.key==='ArrowUp'?-1:1)}if(event.key==='Escape')location.href='index.html?page=observe'});
+    render();
+  </script>
+</body>
+</html>

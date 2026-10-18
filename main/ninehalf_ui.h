@@ -8,3 +8,4 @@ void nt_ui_clock(void);
 void nt_ui_sync_begin(void);
 void nt_ui_sync_state(bool success);
 void nt_ui_notify(void);
+void nt_ui_set_live(const nt_live_t *live);

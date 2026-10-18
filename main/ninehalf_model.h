@@ -10,6 +10,11 @@ typedef struct {
     uint8_t wave[7], zodiac[7];
 } nt_record_t;
 typedef struct {
+    nt_record_t record;
+    uint8_t revealed, wave_mask, zodiac_mask;
+    bool present;
+} nt_live_t;
+typedef struct {
     uint8_t count, week, misses, streak;
 } nt_stat_t;
 typedef struct {
@@ -27,6 +32,10 @@ void nt_stats(const nt_model_t *m, bool special, int32_t today, nt_stat_t out[12
 int nt_zodiac(const char *name);
 int32_t nt_day(const char *timestamp);
 int64_t nt_countdown(int64_t now, bool today_received);
+bool nt_idle_should_blank(int64_t now_us, int64_t last_input_us, unsigned seconds);
+unsigned nt_history_budget(int seconds_beijing);
+unsigned nt_poll_interval(int seconds_beijing, bool today_done, bool success, unsigned failures);
+bool nt_live_merge(nt_live_t *current, const nt_live_t *incoming);
 extern const char *const nt_zodiac_names[12];
 
 int nt_focus_step(int focus, int delta, int first, int last);
