@@ -49,6 +49,12 @@ void nt_app_network_result(const nt_model_t *snapshot, bool success) {
 void nt_app_history_result(const nt_model_t *snapshot) {
     network_result(snapshot, 4);
 }
+void nt_app_history_sync_started(void) {
+    network_result(NULL, 8);
+}
+void nt_app_history_sync_finished(void) {
+    network_result(NULL, 9);
+}
 void nt_app_live_result(const nt_live_t *live) {
     message_t m = {.kind = 7, .live = *live};
     xQueueSend(events, &m, pdMS_TO_TICKS(100));
@@ -138,6 +144,11 @@ void app_main(void) {
             } else if (m->kind == 3) {
                 if (bsp_lvgl_lock(-1)) {
                     nt_ui_sync_state(false);
+                    bsp_lvgl_unlock();
+                }
+            } else if (m->kind == 8 || m->kind == 9) {
+                if (bsp_lvgl_lock(-1)) {
+                    nt_ui_history_sync_state(m->kind == 8);
                     bsp_lvgl_unlock();
                 }
             } else if (m->kind == 7) {

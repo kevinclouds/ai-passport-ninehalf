@@ -53,7 +53,8 @@ static const zodiac_row_t zodiac_2026[12] = {
 static bool current_pending, offline_notice;
 static int wifi_focus = -1, wifi_action;
 static char wifi_selected[33];
-static bool special = true, sort_miss = true, editing, sync_failed, syncing, foreground_loading;
+static bool special = true, sort_miss = true, editing, sync_failed, syncing, history_syncing,
+            foreground_loading;
 static uint32_t notice_until;
 static lv_obj_t *loading_area, *loading_text;
 static bool live_active(void);
@@ -70,6 +71,9 @@ void nt_ui_sync_state(bool success) {
     sync_failed = !success;
     if (had_loading)
         nt_ui_render();
+}
+void nt_ui_history_sync_state(bool active) {
+    history_syncing = active;
 }
 void nt_ui_notify(void) {
     offline_notice = false;
@@ -580,7 +584,7 @@ static void loading(void) {
     lv_obj_set_style_arc_width(spinner, 3, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(spinner, lv_color_hex(0x285cc6), LV_PART_INDICATOR);
     lv_obj_t *text =
-        label(area, 12, 140, 216, time(NULL) < 1700000000 ? "正在校时" : "正在同步", 13, 0x565661);
+        label(area, 12, 140, 216, time(NULL) < 1700000000 ? "正在校时" : "正在刷新", 13, 0x565661);
     loading_text = text;
     lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
     footer("同步中", "长按 UP 观察");
@@ -591,7 +595,7 @@ void nt_ui_render(void) {
                  (!live_active() && ((!sync_failed && !model->count) ||
                                      (!model->count && time(NULL) < 1700000000))));
     if (busy && loading_area) {
-        lv_label_set_text(loading_text, time(NULL) < 1700000000 ? "正在校时" : "正在同步");
+        lv_label_set_text(loading_text, time(NULL) < 1700000000 ? "正在校时" : "正在刷新");
         return;
     }
     loading_area = NULL;
@@ -695,7 +699,7 @@ void nt_ui_key(bsp_btn_t key, bsp_btn_ev_t ev) {
         if (key == BSP_BTN_OK) {
             if (nt_wifi_online()) {
                 foreground_loading = true;
-                if (!syncing) {
+                if (!syncing || history_syncing) {
                     nt_ui_sync_begin();
                     nt_network_refresh();
                 }

@@ -7,5 +7,6 @@ void nt_ui_key(bsp_btn_t button, bsp_btn_ev_t event);
 void nt_ui_clock(void);
 void nt_ui_sync_begin(void);
 void nt_ui_sync_state(bool success);
+void nt_ui_history_sync_state(bool active);
 void nt_ui_notify(void);
 void nt_ui_set_live(const nt_live_t *live);

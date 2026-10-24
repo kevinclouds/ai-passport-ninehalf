@@ -260,6 +260,13 @@ int main(int argc, char **argv) {
     assert(!find_arc(lv_screen_active()));
     nt_ui_sync_state(true);
     nt_ui_render();
+    int history_refresh_before = refresh_calls;
+    nt_ui_history_sync_state(true);
+    nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
+    assert(refresh_calls == history_refresh_before + 1 && find_arc(lv_screen_active()));
+    nt_ui_history_sync_state(false);
+    nt_ui_sync_state(true);
+    nt_ui_render();
     nt_ui_key(BSP_BTN_OK, BSP_BTN_LONG);
     assert(has_text(lv_screen_active(), "本期记录"));
     frame("home");
@@ -301,8 +308,9 @@ int main(int argc, char **argv) {
     nt_ui_clock();
     frame("home");
     check_number_center(12, 62, 27, 30);
+    int manual_refresh_before = refresh_calls;
     nt_ui_key(BSP_BTN_OK, BSP_BTN_CLICK);
-    assert(refresh_calls == 1);
+    assert(refresh_calls == manual_refresh_before + 1);
     nt_ui_render();
     frame("loading");
     lv_obj_t *loading_root = lv_obj_get_child(lv_screen_active(), 0);

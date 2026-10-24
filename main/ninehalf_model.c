@@ -85,6 +85,25 @@ unsigned nt_history_budget(int seconds_beijing) {
         return start - seconds_beijing;
     return 120;
 }
+unsigned nt_history_timeout_seconds(unsigned budget) {
+    return budget < 5 ? budget : 5;
+}
+unsigned nt_history_retry_interval(unsigned failures) {
+    return failures <= 1 ? 30 : failures == 2 ? 60 : 120;
+}
+bool nt_history_should_sync(bool needed, int64_t now, int64_t retry_due) {
+    return needed && now >= retry_due;
+}
+bool nt_history_should_cancel(bool active, bool manual) {
+    return active && manual;
+}
+unsigned nt_history_retry_wait(unsigned interval, bool needed, int seconds_beijing, int64_t now,
+                               int64_t retry_due) {
+    if (!needed || !nt_history_budget(seconds_beijing) || retry_due <= now)
+        return interval;
+    unsigned retry = (unsigned)(retry_due - now);
+    return retry < interval ? retry : interval;
+}
 unsigned nt_poll_interval(int seconds_beijing, bool today_done, bool success, unsigned failures) {
     (void)today_done;
     if (!success)

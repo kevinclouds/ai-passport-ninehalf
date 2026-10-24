@@ -18,6 +18,8 @@
 #include <sys/time.h>
 static TaskHandle_t worker;
 static volatile bool provision_requested;
+static volatile bool refresh_requested;
+static volatile bool history_active;
 #define REQUEST_REFRESH 1
 #define REQUEST_PROVISION 2
 #define WIFI_CHANGED 4
@@ -31,6 +33,8 @@ typedef struct {
 } reader_t;
 static int read_chunk(reader_t *r) {
     while (!provision_requested && esp_timer_get_time() < r->deadline) {
+        if (r->history && refresh_requested)
+            return -1;
         if (r->history && !nt_history_budget((time(NULL) + 8 * 3600) % 86400))
             return -1;
         int n = esp_http_client_read(r->client, (char *)r->buf, sizeof(r->buf));
@@ -180,7 +184,7 @@ static bool fetch(const char *url, nt_model_t *snapshot, nt_live_t *live) {
     if (!c)
         return false;
     esp_http_client_set_url(c, url);
-    esp_http_client_set_timeout_ms(c, !live && history_budget < 15 ? history_budget * 1000 : 15000);
+    esp_http_client_set_timeout_ms(c, live ? 15000 : nt_history_timeout_seconds(history_budget) * 1000);
     esp_http_client_set_header(c, "Accept", "application/json, text/plain, */*");
     esp_http_client_set_header(c, "Accept-Encoding", "identity");
     esp_http_client_set_header(c, "Accept-Language", "zh-CN,zh;q=0.9");
@@ -200,7 +204,7 @@ static bool fetch(const char *url, nt_model_t *snapshot, nt_live_t *live) {
         goto done;
     reader->client = c;
     reader->history = live == NULL;
-    if (provision_requested)
+    if (provision_requested || (!live && refresh_requested))
         goto done;
     esp_err_t err = esp_http_client_open(c, 0);
     if (err != ESP_OK) {
@@ -208,10 +212,10 @@ static bool fetch(const char *url, nt_model_t *snapshot, nt_live_t *live) {
         goto done;
     }
     history_budget = nt_history_budget((time(NULL) + 8 * 3600) % 86400);
-    if (provision_requested || (!live && !history_budget))
+    if (provision_requested || (!live && (!history_budget || refresh_requested)))
         goto done;
     if (!live)
-        esp_http_client_set_timeout_ms(c, history_budget < 15 ? history_budget * 1000 : 15000);
+        esp_http_client_set_timeout_ms(c, nt_history_timeout_seconds(history_budget) * 1000);
     if (esp_http_client_fetch_headers(c) < 0) {
         ESP_LOGE(TAG, "HTTPS headers failed");
         goto done;
@@ -220,7 +224,7 @@ static bool fetch(const char *url, nt_model_t *snapshot, nt_live_t *live) {
     ESP_LOGI(TAG, "HTTPS status=%d encoding=%s", status,
              headers.encoding[0] ? headers.encoding : "identity");
     history_budget = nt_history_budget((time(NULL) + 8 * 3600) % 86400);
-    if (status != 200 || provision_requested || (!live && !history_budget))
+    if (status != 200 || provision_requested || (!live && (!history_budget || refresh_requested)))
         goto done;
     esp_http_client_set_timeout_ms(c, 1000);
     unsigned body_seconds = live ? 15 : history_budget;
@@ -271,7 +275,8 @@ static void run(void *arg) {
     esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     esp_netif_sntp_init(&sntp);
     int64_t due = 0, provision_until = 0;
-    unsigned failures = 0;
+    unsigned failures = 0, history_failures = 0;
+    int64_t history_retry_due = 0;
     bool need_history = true, was_online = false, was_live = false;
     nt_model_t *snapshot = NULL;
     ESP_LOGI(TAG, "Network worker ready");
@@ -310,18 +315,24 @@ static void run(void *arg) {
             was_online = true;
             due = 0;
             need_history = true;
+            history_failures = 0;
+            history_retry_due = 0;
         }
         time_t now = time(NULL);
         if (now < 1700000000)
             continue;
-        if (flags & REQUEST_REFRESH)
+        if (flags & REQUEST_REFRESH) {
             due = 0;
+            refresh_requested = false;
+        }
         int seconds_now = (now + 8 * 3600) % 86400;
         bool live_window = seconds_now >= 21 * 3600 + 30 * 60 &&
                            seconds_now < 21 * 3600 + 40 * 60;
         if (live_window && !was_live) {
             due = 0;
             need_history = true;
+            history_failures = 0;
+            history_retry_due = 0;
         }
         if (!live_window && was_live)
             due = 0;
@@ -342,41 +353,58 @@ static void run(void *arg) {
         if (provision_requested) {
             free(snapshot);
             snapshot = NULL;
-            nt_app_sync_finished(true);
+            if (show_loading)
+                nt_app_sync_finished(true);
             due = 0;
             continue;
         }
+        time_t bj = time(NULL) + 8 * 3600;
+        int32_t today = bj / 86400;
+        bool today_done = ok && snapshot && snapshot->count && snapshot->records[0].day == today;
         if (ok) {
             if (snapshot->count)
                 nt_app_network_result(snapshot, true);
             if (live.present &&
                 (!snapshot->count || strcmp(live.record.issue, snapshot->records[0].issue) > 0))
                 nt_app_live_result(&live);
-            if (need_history && !provision_requested &&
-                nt_history_budget((time(NULL) + 8 * 3600) % 86400)) {
+        } else
+            nt_app_network_result(NULL, false);
+        if (show_loading)
+            nt_app_sync_finished(ok);
+        int64_t history_now = esp_timer_get_time() / 1000000;
+        if (ok && nt_history_should_sync(need_history, history_now, history_retry_due) &&
+            !provision_requested && nt_history_budget((time(NULL) + 8 * 3600) % 86400)) {
                 struct tm t;
-                time_t beijing = now + 8 * 3600;
+                time_t beijing = time(NULL) + 8 * 3600;
                 gmtime_r(&beijing, &t);
                 snprintf(url, sizeof(url), "https://history.macaumarksix.com/history/macaujc2/y/%d",
                          t.tm_year + 1900);
-                if (fetch(url, snapshot, NULL)) {
+                nt_app_history_sync_started();
+                history_active = true;
+                bool history_ok = fetch(url, snapshot, NULL);
+                bool history_cancelled = refresh_requested;
+                history_active = false;
+                refresh_requested = false;
+                if (history_ok) {
                     nt_app_history_result(snapshot);
                     need_history = false;
+                    history_failures = 0;
+                    history_retry_due = 0;
+                } else if (!history_cancelled && !provision_requested) {
+                    if (history_failures < UINT32_MAX)
+                        history_failures++;
+                    history_retry_due = esp_timer_get_time() / 1000000 +
+                                        nt_history_retry_interval(history_failures);
                 }
-            }
-        } else
-            nt_app_network_result(NULL, false);
-        time_t bj = time(NULL) + 8 * 3600;
-        int32_t today = bj / 86400;
-        bool today_done = ok && snapshot && snapshot->count && snapshot->records[0].day == today;
+                nt_app_history_sync_finished();
+        }
         free(snapshot);
         snapshot = NULL;
         if (provision_requested) {
-            nt_app_sync_finished(true);
             due = 0;
             continue;
         }
-        nt_app_sync_finished(ok);
+        mono = esp_timer_get_time() / 1000000;
         struct tm t;
         gmtime_r(&bj, &t);
         int seconds = t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec;
@@ -388,8 +416,11 @@ static void run(void *arg) {
         if (interval == UINT32_MAX || (!live_window && failures >= 3))
             interval = (seconds < 21 * 3600 + 30 * 60 ? 0 : 86400) - seconds +
                        21 * 3600 + 30 * 60;
+        interval = nt_history_retry_wait(interval, ok && need_history, seconds, mono,
+                                         history_retry_due);
         due = interval ? esp_timer_get_time() / 1000000 + interval : 0;
-        ESP_LOGI(TAG, "sync %s; free heap %lu", ok ? "ok" : "failed",
+        ESP_LOGI(TAG, "sync %s; history %s; free heap %lu", ok ? "ok" : "failed",
+                 need_history ? "pending" : "ready",
                  (unsigned long)esp_get_free_heap_size());
     }
 }
@@ -405,8 +436,11 @@ void nt_network_start(void) {
     }
 }
 void nt_network_refresh(void) {
-    if (worker)
+    if (worker) {
+        if (nt_history_should_cancel(history_active, true))
+            refresh_requested = true;
         xTaskNotify(worker, REQUEST_REFRESH, eSetBits);
+    }
 }
 void nt_network_provision(void) {
     ESP_LOGI(TAG, "UI requested provisioning; worker %s", worker ? "ready" : "unavailable");

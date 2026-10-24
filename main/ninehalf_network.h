@@ -14,6 +14,8 @@ void nt_network_refresh(void);
 void nt_network_provision(void);
 void nt_app_network_result(const nt_model_t *snapshot, bool success);
 void nt_app_history_result(const nt_model_t *snapshot);
+void nt_app_history_sync_started(void);
+void nt_app_history_sync_finished(void);
 void nt_app_live_result(const nt_live_t *live);
 bool nt_provision_failed(void);
 

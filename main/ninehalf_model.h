@@ -34,6 +34,12 @@ int32_t nt_day(const char *timestamp);
 int64_t nt_countdown(int64_t now, bool today_received);
 bool nt_idle_should_blank(int64_t now_us, int64_t last_input_us, unsigned seconds);
 unsigned nt_history_budget(int seconds_beijing);
+unsigned nt_history_timeout_seconds(unsigned budget);
+unsigned nt_history_retry_interval(unsigned failures);
+bool nt_history_should_sync(bool needed, int64_t now, int64_t retry_due);
+bool nt_history_should_cancel(bool active, bool manual);
+unsigned nt_history_retry_wait(unsigned interval, bool needed, int seconds_beijing, int64_t now,
+                               int64_t retry_due);
 unsigned nt_poll_interval(int seconds_beijing, bool today_done, bool success, unsigned failures);
 bool nt_live_merge(nt_live_t *current, const nt_live_t *incoming);
 extern const char *const nt_zodiac_names[12];

@@ -47,6 +47,20 @@ int main(void) {
     assert(nt_history_budget(21 * 3600 + 39 * 60 + 59) == 0);
     assert(nt_history_budget(21 * 3600 + 40 * 60) == 120);
     assert(nt_history_budget(20 * 3600) == 120);
+    assert(nt_history_timeout_seconds(120) == 5);
+    assert(nt_history_timeout_seconds(4) == 4);
+    assert(nt_history_retry_interval(1) == 30);
+    assert(nt_history_retry_interval(2) == 60);
+    assert(nt_history_retry_interval(3) == 120);
+    assert(nt_history_retry_interval(9) == 120);
+    assert(nt_history_should_sync(true, 100, 0));
+    assert(!nt_history_should_sync(true, 100, 130));
+    assert(nt_history_should_sync(true, 130, 130));
+    assert(!nt_history_should_sync(false, 130, 0));
+    assert(nt_history_should_cancel(true, true));
+    assert(!nt_history_should_cancel(false, true));
+    assert(nt_history_retry_wait(UINT32_MAX, true, 21 * 3600 + 40 * 60 + 1, 100, 130) ==
+           30);
     assert(nt_poll_interval(21 * 3600 + 29 * 60 + 59, false, true, 0) == 1);
     assert(nt_poll_interval(21 * 3600 + 30 * 60, false, true, 0) == 0);
     assert(nt_poll_interval(21 * 3600 + 39 * 60 + 59, true, true, 0) == 0);
