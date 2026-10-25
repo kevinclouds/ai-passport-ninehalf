@@ -240,6 +240,20 @@ void bsp_display_backlight(uint8_t percent) {
     ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
 }
 
+esp_err_t bsp_display_sleep(bool sleep) {
+    if (!s_ready || !s_panel)
+        return ESP_ERR_INVALID_STATE;
+    if (sleep) {
+        bsp_display_backlight(0);
+        esp_err_t err = esp_lcd_panel_disp_on_off(s_panel, false);
+        if (err != ESP_OK) return err;
+        return esp_lcd_panel_disp_sleep(s_panel, true);
+    }
+    esp_err_t err = esp_lcd_panel_disp_sleep(s_panel, false);
+    if (err != ESP_OK) return err;
+    return esp_lcd_panel_disp_on_off(s_panel, true);
+}
+
 esp_err_t bsp_display_prepare_deep_sleep(void) {
     esp_err_t first_error = ESP_OK;
     if (!s_ready || !s_panel) {

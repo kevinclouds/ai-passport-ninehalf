@@ -4,6 +4,7 @@
 #include "bsp_display_rounding.h"
 #include "bsp_pins.h"
 #include "esp_lvgl_port.h"
+#include "esp_lcd_panel_io.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -129,4 +130,15 @@ bool bsp_lvgl_lock(int timeout_ms) {
 }
 void bsp_lvgl_unlock(void) {
     if (s_disp) lvgl_port_unlock();
+}
+
+esp_err_t bsp_lvgl_sleep(bool sleep) {
+    return sleep ? lvgl_port_stop() : lvgl_port_resume();
+}
+
+esp_err_t bsp_lvgl_refr_now(void) {
+    if (!s_disp) return ESP_ERR_INVALID_STATE;
+    lv_refr_now(s_disp);
+    // A no-command polling transaction drains queued DMA color transfers.
+    return esp_lcd_panel_io_tx_param(bsp_display_io(), -1, NULL, 0);
 }

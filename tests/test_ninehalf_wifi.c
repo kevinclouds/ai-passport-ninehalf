@@ -3,6 +3,12 @@
 #include <string.h>
 #include <stdio.h>
 int main(void) {
+    assert(nt_wifi_scan_interval(0) == 10);
+    assert(nt_wifi_scan_interval(3) == 10);
+    assert(nt_wifi_scan_interval(4) == 30);
+    assert(nt_wifi_scan_interval(6) == 30);
+    assert(nt_wifi_scan_interval(7) == 60);
+    assert(nt_wifi_scan_interval(UINT32_MAX) == 60);
     nt_wifi_profiles_t p = {0};
     nt_wifi_remember(&p, "Home", "old");
     nt_wifi_remember(&p, "Office", "work");

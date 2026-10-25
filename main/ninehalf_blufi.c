@@ -73,6 +73,8 @@ static bool s_command_remove;
 static int8_t s_signal[NT_WIFI_LIMIT] = {INT8_MIN, INT8_MIN, INT8_MIN, INT8_MIN, INT8_MIN};
 static uint8_t s_tried;
 static int64_t s_attempt_at, s_scan_at;
+static unsigned s_scan_failures;
+static wifi_ps_type_t s_power_save = WIFI_PS_NONE;
 static esp_err_t save_profiles(void) {
     nt_wifi_profiles_t copy;
     portENTER_CRITICAL(&s_profiles_lock);
@@ -588,6 +590,28 @@ bool nt_wifi_online(void) {
 bool nt_provision_active(void) {
     return s_host_initialized;
 }
+void nt_wifi_expedite(void) {
+    s_scan_failures = 0;
+    s_scan_at = 0;
+}
+unsigned nt_wifi_retry_wait(void) {
+    int64_t remaining = s_scan_at - esp_timer_get_time() / 1000000;
+    if (s_host_initialized || s_wifi_connecting || remaining <= 0)
+        return 1;
+    return remaining > 60 ? 60 : (unsigned)remaining;
+}
+void nt_wifi_power_save(bool idle) {
+    if (s_wifi_got_ip)
+        s_scan_failures = 0;
+    wifi_ps_type_t mode = idle && !s_host_initialized ? WIFI_PS_MAX_MODEM : WIFI_PS_MIN_MODEM;
+    if (mode != s_power_save) {
+        esp_err_t err = esp_wifi_set_ps(mode);
+        if (err == ESP_OK)
+            s_power_save = mode;
+        else
+            ESP_LOGW(TAG, "Wi-Fi power save: %s", esp_err_to_name(err));
+    }
+}
 void nt_wifi_retry(void) {
     if (s_wifi_got_ip || s_host_initialized)
         return;
@@ -610,7 +634,8 @@ void nt_wifi_retry(void) {
     }
     wifi_scan_config_t scan = {0};
     if (esp_wifi_scan_start(&scan, true) != ESP_OK) {
-        s_scan_at = now + 5;
+        if (s_scan_failures < 7) s_scan_failures++;
+        s_scan_at = now + nt_wifi_scan_interval(s_scan_failures);
         return;
     }
     uint16_t count = 0;
@@ -635,7 +660,8 @@ void nt_wifi_retry(void) {
     else
         s_tried = 0;
     portEXIT_CRITICAL(&s_profiles_lock);
-    s_scan_at = now + (best < 0 ? 10 : 5);
+    if (s_scan_failures < 7) s_scan_failures++;
+    s_scan_at = now + (best < 0 ? nt_wifi_scan_interval(s_scan_failures) : 5);
     if (best >= 0)
         connect_profile(&profiles.items[best]);
 }

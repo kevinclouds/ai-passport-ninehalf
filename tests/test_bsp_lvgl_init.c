@@ -8,6 +8,23 @@ static lv_display_t display;
 static int panel_present = 1, lock_depth, port_live, display_live, callback_live;
 static int fail_lock, fail_port, fail_display, fail_event, init_calls, unlocked_flushes;
 static int panel_token, io_token;
+static bool timers_paused;
+static bool dma_pending;
+static esp_err_t wait_error;
+void lv_refr_now(lv_display_t *disp) {
+    assert(lock_depth && disp == &display);
+    dma_pending = true; // Rendering returns before the last async transfer.
+}
+esp_err_t esp_lcd_panel_io_tx_param(esp_lcd_panel_io_handle_t io, int cmd,
+                                  const void *param, size_t size) {
+    assert(lock_depth && io == &io_token && cmd == -1 && !param && !size);
+    assert(dma_pending);
+    if (wait_error != ESP_OK) return wait_error;
+    dma_pending = false;
+    return ESP_OK;
+}
+esp_err_t lvgl_port_stop(void) { assert(lock_depth); timers_paused = true; return ESP_OK; }
+esp_err_t lvgl_port_resume(void) { assert(lock_depth); timers_paused = false; return ESP_OK; }
 esp_lcd_panel_handle_t bsp_display_panel(void) { return panel_present ? &panel_token : NULL; }
 esp_lcd_panel_io_handle_t bsp_display_io(void) { return &io_token; }
 esp_err_t lvgl_port_init(const lvgl_port_cfg_t *cfg) {
@@ -75,6 +92,15 @@ int main(void) {
     const int before = init_calls;
     assert(bsp_lvgl_init() == &display && init_calls == before);
     assert(bsp_lvgl_lock(5)); bsp_lvgl_unlock();
+    assert(bsp_lvgl_lock(5));
+    assert(bsp_lvgl_sleep(true) == ESP_OK && timers_paused);
+    assert(bsp_lvgl_refr_now() == ESP_OK && !dma_pending && timers_paused);
+    wait_error = ESP_FAIL;
+    assert(bsp_lvgl_refr_now() == ESP_FAIL && dma_pending && timers_paused);
+    wait_error = ESP_OK;
+    assert(bsp_lvgl_refr_now() == ESP_OK && !dma_pending);
+    assert(bsp_lvgl_sleep(false) == ESP_OK && !timers_paused);
+    bsp_lvgl_unlock();
     uint16_t pixels[BSP_LCD_W] = {0};
     for (int x = 0; x < BSP_LCD_W; ++x) pixels[x] = 0xffff;
     display.buffer = (lv_draw_buf_t){ .data = (uint8_t *)pixels, .header.stride = sizeof(pixels) };

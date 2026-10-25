@@ -97,6 +97,20 @@ bool nt_history_should_sync(bool needed, int64_t now, int64_t retry_due) {
 bool nt_history_should_cancel(bool active, bool manual) {
     return active && manual;
 }
+unsigned nt_network_wait_ms(bool online, bool was_live, int seconds_beijing, int64_t now,
+                            int64_t due, unsigned offline_wait) {
+    const int start = 21 * 3600 + 30 * 60, end = 21 * 3600 + 40 * 60;
+    bool live = seconds_beijing >= start && seconds_beijing < end;
+    if (online && (live != was_live || (live && due <= now)))
+        return 1;
+    unsigned wait = online ? 1000 : offline_wait * 1000;
+    if (online && !live && due > now)
+        wait = (due - now > 5 ? 5 : (unsigned)(due - now)) * 1000;
+    if (seconds_beijing < start && (unsigned)(start - seconds_beijing) * 1000 < wait)
+        wait = (start - seconds_beijing) * 1000;
+    return wait;
+}
+
 unsigned nt_history_retry_wait(unsigned interval, bool needed, int seconds_beijing, int64_t now,
                                int64_t retry_due) {
     if (!needed || !nt_history_budget(seconds_beijing) || retry_due <= now)

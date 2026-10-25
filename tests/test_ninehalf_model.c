@@ -36,6 +36,13 @@ int main(void) {
     now += 120;
     assert(nt_countdown(now, false) == 0);
     assert(nt_countdown(now, true) == 86400);
+    assert(nt_network_wait_ms(true, false, 12 * 3600, 100, 10000, 60) == 5000);
+    assert(nt_network_wait_ms(true, false, 21 * 3600 + 30 * 60 - 1, 100, 10000, 60) == 1000);
+    assert(nt_network_wait_ms(true, false, 21 * 3600 + 30 * 60, 100, 10000, 60) == 1);
+    assert(nt_network_wait_ms(true, true, 21 * 3600 + 35 * 60, 100, 0, 60) == 1);
+    assert(nt_network_wait_ms(true, true, 21 * 3600 + 40 * 60, 100, 0, 60) == 1);
+    assert(nt_network_wait_ms(false, false, 12 * 3600, 100, 10000, 60) == 60000);
+    assert(nt_network_wait_ms(false, false, 21 * 3600 + 30 * 60 - 1, 100, 10000, 60) == 1000);
     assert(!nt_idle_should_blank(60000000, 0, 60));
     assert(nt_idle_should_blank(60000001, 0, 60));
     assert(!nt_idle_should_blank(900000000, 0, 0));

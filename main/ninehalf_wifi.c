@@ -1,5 +1,10 @@
 #include "ninehalf_wifi.h"
 #include <string.h>
+unsigned nt_wifi_scan_interval(unsigned failures) {
+    if (failures <= 3) return 10;
+    if (failures <= 6) return 30;
+    return 60;
+}
 void nt_wifi_remember(nt_wifi_profiles_t *p, const char *ssid, const char *password) {
     if (!ssid[0])
         return;

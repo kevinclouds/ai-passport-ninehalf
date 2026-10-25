@@ -1,6 +1,7 @@
 #include "ninehalf_ui.h"
 #include "ninehalf_network.h"
 #include "ninehalf_store.h"
+#include "ninehalf_power.h"
 #include "bsp_display.h"
 #include "bsp_audio.h"
 #include "bsp_battery.h"
@@ -9,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -25,6 +27,7 @@ typedef struct {
 } message_t;
 static QueueHandle_t events;
 static nt_model_t model;
+static SemaphoreHandle_t audio_lock;
 static void button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
     (void)user;
     if (ev != BSP_BTN_PRESS && ev != BSP_BTN_CLICK && ev != BSP_BTN_LONG)
@@ -68,16 +71,22 @@ void nt_app_sync_finished(bool success) {
 static void chime(void *arg) {
     (void)arg;
     int16_t samples[160];
-    if (bsp_audio_init() != ESP_OK || bsp_audio_set_format(16000, 16, 1) != ESP_OK) {
-        vTaskDelete(NULL);
-        return;
-    }
+    xSemaphoreTake(audio_lock, portMAX_DELAY);
+    nt_power_busy(true);
+    bsp_audio_set_volume(model.settings.volume);
+    if (bsp_audio_init() != ESP_OK || bsp_audio_wake() != ESP_OK ||
+        bsp_audio_set_format(16000, 16, 1) != ESP_OK)
+        goto done;
     for (int block = 0; block < 20; block++) {
         for (int i = 0; i < 160; i++)
             samples[i] = (int16_t)(sin((block * 160 + i) * 2 * 3.141592653589793 * 880 / 16000) *
                                    4000 * (20 - block) / 20);
         bsp_audio_write(samples, sizeof(samples));
     }
+done:
+    ESP_ERROR_CHECK_WITHOUT_ABORT(bsp_audio_sleep());
+    nt_power_busy(false);
+    xSemaphoreGive(audio_lock);
     vTaskDelete(NULL);
 }
 static void allocation_failed(size_t size, uint32_t caps, const char *function) {
@@ -86,6 +95,8 @@ static void allocation_failed(size_t size, uint32_t caps, const char *function) 
 }
 void app_main(void) {
     ESP_ERROR_CHECK(heap_caps_register_failed_alloc_callback(allocation_failed));
+    nt_power_init();
+    nt_power_busy(true);
     ESP_ERROR_CHECK(demo_radio_nvs_prepare());
     nt_store_load(&model);
     ESP_ERROR_CHECK(bsp_display_init());
@@ -93,6 +104,12 @@ void app_main(void) {
         return;
     bsp_battery_init();
     bsp_audio_set_volume(model.settings.volume);
+    audio_lock = xSemaphoreCreateMutex();
+    if (!audio_lock)
+        return;
+    // The codec may consume power even before the first reminder is played.
+    if (bsp_audio_init() == ESP_OK)
+        ESP_ERROR_CHECK_WITHOUT_ABORT(bsp_audio_sleep());
     bsp_display_backlight(model.settings.brightness);
     events = xQueueCreate(8, sizeof(message_t));
     if (!events)
@@ -112,19 +129,35 @@ void app_main(void) {
     bsp_btn_t wake_key = BSP_BTN_OK;
     bool screen_off = false;
     for (;;) {
-        if (xQueueReceive(events, m, pdMS_TO_TICKS(1000))) {
+        if (xQueueReceive(events, m, screen_off ? portMAX_DELAY : pdMS_TO_TICKS(1000))) {
             if (m->kind == 1) {
                 int64_t now_us = esp_timer_get_time();
                 last_input_us = now_us;
                 if (m->event == BSP_BTN_PRESS && screen_off) {
-                    screen_off = false;
                     woke_at_us = now_us;
                     wake_key = m->key;
-                    bsp_display_backlight(model.settings.brightness);
+                    nt_power_busy(true);
                     if (bsp_lvgl_lock(-1)) {
-                        nt_ui_render();
+                        esp_err_t err = bsp_display_sleep(false);
+                        if (err == ESP_OK) {
+                            nt_ui_sleep(false);
+                            nt_ui_render();
+                            err = bsp_lvgl_refr_now();
+                            if (err == ESP_OK)
+                                err = bsp_lvgl_sleep(false);
+                            if (err == ESP_OK) {
+                                bsp_display_backlight(model.settings.brightness);
+                                screen_off = false;
+                            } else
+                                nt_ui_sleep(true);
+                        }
+                        ESP_ERROR_CHECK_WITHOUT_ABORT(err);
                         bsp_lvgl_unlock();
                     }
+                    if (screen_off)
+                        nt_power_busy(false);
+                    else
+                        nt_network_display(true);
                 } else if (m->event != BSP_BTN_PRESS &&
                            !(woke_at_us && m->key == wake_key &&
                              now_us - woke_at_us < 2000000) && bsp_lvgl_lock(-1)) {
@@ -203,8 +236,15 @@ void app_main(void) {
             m->snapshot = NULL;
         }
         if (!screen_off && nt_idle_should_blank(esp_timer_get_time(), last_input_us, nt_store_sleep_seconds())) {
-            bsp_display_backlight(0);
-            screen_off = true;
+            if (bsp_lvgl_lock(-1)) {
+                nt_ui_sleep(true);
+                ESP_ERROR_CHECK_WITHOUT_ABORT(bsp_lvgl_sleep(true));
+                ESP_ERROR_CHECK_WITHOUT_ABORT(bsp_display_sleep(true));
+                bsp_lvgl_unlock();
+                screen_off = true;
+                nt_power_busy(false);
+                nt_network_display(false);
+            }
         }
         if (!screen_off && bsp_lvgl_lock(-1)) {
             static bool online;

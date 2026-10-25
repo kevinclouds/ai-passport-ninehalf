@@ -3,7 +3,6 @@
 #include "ninehalf_store.h"
 #include "ninehalf_wifi.h"
 #include "bsp_display.h"
-#include "bsp_audio.h"
 #include "bsp_battery.h"
 #include "lvgl.h"
 #include "src/misc/lv_text_private.h"
@@ -26,6 +25,7 @@ LV_FONT_DECLARE(nt_font_19);
 LV_FONT_DECLARE(nt_font_20);
 LV_FONT_DECLARE(nt_font_24);
 static nt_model_t *model;
+static bool sleeping;
 static nt_live_t live;
 static lv_obj_t *root, *scroll, *countdown, *time_label, *stat_rows[12], *record_rows[30];
 static int page, focus = -1, observe_focus = -2, setting_focus = -1;
@@ -198,6 +198,8 @@ static void countdown_text(const char *text, int size) {
     lv_label_set_text(countdown, text);
 }
 void nt_ui_clock(void) {
+    if (sleeping)
+        return;
     if (page >= 3 && page <= 5) {
         static nt_wifi_view_t previous;
         static uint32_t checked;
@@ -590,6 +592,8 @@ static void loading(void) {
     footer("同步中", "长按 UP 观察");
 }
 void nt_ui_render(void) {
+    if (sleeping)
+        return;
     bool busy = page == 0 && nt_wifi_online() &&
                 ((syncing && foreground_loading) ||
                  (!live_active() && ((!sync_failed && !model->count) ||
@@ -650,6 +654,9 @@ void nt_ui_render(void) {
         label(notice, 8, 5, 200, offline_notice ? "离线，无法刷新" : "新期记录已揭晓", 10,
               0x243552);
     }
+}
+void nt_ui_sleep(bool sleep) {
+    sleeping = sleep;
 }
 void nt_ui_create(nt_model_t *m) {
     model = m;
@@ -794,7 +801,6 @@ void nt_ui_key(bsp_btn_t key, bsp_btn_ev_t ev) {
             int next = *v - d * 10;
             int min = setting_focus == 3 ? 0 : 10;
             *v = next < min ? min : next > 100 ? 100 : next;
-            bsp_audio_set_volume(model->settings.volume);
             bsp_display_backlight(model->settings.brightness);
         } else
             setting_focus = setting_focus < 0 ? (d > 0 ? 0 : 6) : (setting_focus + d + 7) % 7;

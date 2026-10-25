@@ -1,6 +1,7 @@
 #include "ninehalf_network.h"
 #include "ninehalf_wifi.h"
 #include "ninehalf_stream.h"
+#include "ninehalf_power.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_netif_sntp.h"
@@ -20,9 +21,11 @@ static TaskHandle_t worker;
 static volatile bool provision_requested;
 static volatile bool refresh_requested;
 static volatile bool history_active;
+static volatile bool display_awake = true;
 #define REQUEST_REFRESH 1
 #define REQUEST_PROVISION 2
 #define WIFI_CHANGED 4
+#define DISPLAY_CHANGED 8
 static const char *TAG = "nt_network";
 typedef struct {
     esp_http_client_handle_t client;
@@ -282,8 +285,18 @@ static void run(void *arg) {
     ESP_LOGI(TAG, "Network worker ready");
     for (;;) {
         uint32_t flags = 0;
-        xTaskNotifyWait(0, UINT32_MAX, &flags, pdMS_TO_TICKS(due == 0 && was_live ? 1 : 1000));
+        int64_t wait_now = esp_timer_get_time() / 1000000;
+        int clock_seconds = (time(NULL) + 8 * 3600) % 86400;
+        unsigned wait_ms = nt_network_wait_ms(was_online, was_live, clock_seconds, wait_now,
+                                              due, nt_wifi_retry_wait());
+        xTaskNotifyWait(0, UINT32_MAX, &flags, pdMS_TO_TICKS(wait_ms));
         int64_t mono = esp_timer_get_time() / 1000000;
+        clock_seconds = (time(NULL) + 8 * 3600) % 86400;
+        bool realtime = clock_seconds >= 21 * 3600 + 30 * 60 &&
+                        clock_seconds < 21 * 3600 + 40 * 60;
+        nt_wifi_power_save(!display_awake && !realtime && !provision_requested);
+        if ((flags & REQUEST_REFRESH) || ((flags & DISPLAY_CHANGED) && display_awake))
+            nt_wifi_expedite();
         if ((flags & REQUEST_PROVISION) || provision_requested) {
             ESP_LOGI(TAG, "Processing provisioning request");
             close_client();
@@ -349,7 +362,9 @@ static void run(void *arg) {
                  (long long)request_time.tv_sec * 1000 + request_time.tv_usec / 1000);
         snapshot = calloc(1, sizeof(*snapshot));
         nt_live_t live = {0};
+        nt_power_busy(true);
         bool ok = snapshot && fetch(url, snapshot, &live);
+        nt_power_busy(false);
         if (provision_requested) {
             free(snapshot);
             snapshot = NULL;
@@ -381,7 +396,9 @@ static void run(void *arg) {
                          t.tm_year + 1900);
                 nt_app_history_sync_started();
                 history_active = true;
+                nt_power_busy(true);
                 bool history_ok = fetch(url, snapshot, NULL);
+                nt_power_busy(false);
                 bool history_cancelled = refresh_requested;
                 history_active = false;
                 refresh_requested = false;
@@ -434,6 +451,11 @@ void nt_network_start(void) {
         ESP_LOGE(TAG, "Network task allocation failed");
         nt_app_network_result(NULL, false);
     }
+}
+void nt_network_display(bool awake) {
+    display_awake = awake;
+    if (worker)
+        xTaskNotify(worker, DISPLAY_CHANGED, eSetBits);
 }
 void nt_network_refresh(void) {
     if (worker) {

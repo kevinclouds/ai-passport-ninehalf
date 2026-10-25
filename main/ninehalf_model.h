@@ -41,6 +41,8 @@ bool nt_history_should_cancel(bool active, bool manual);
 unsigned nt_history_retry_wait(unsigned interval, bool needed, int seconds_beijing, int64_t now,
                                int64_t retry_due);
 unsigned nt_poll_interval(int seconds_beijing, bool today_done, bool success, unsigned failures);
+unsigned nt_network_wait_ms(bool online, bool was_live, int seconds_beijing, int64_t now,
+                            int64_t due, unsigned offline_wait);
 bool nt_live_merge(nt_live_t *current, const nt_live_t *incoming);
 extern const char *const nt_zodiac_names[12];
 

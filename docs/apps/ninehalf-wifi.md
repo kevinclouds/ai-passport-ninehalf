@@ -4,7 +4,7 @@
 
 The device remembers up to five successfully connected networks in the `nt-wifi` NVS namespace. A repeated SSID updates its password and moves to the most recently used position. A sixth network replaces the least recently used network. Existing SDK credentials migrate before the legacy SDK slot is cleared; subsequent STA configurations use RAM so a deleted legacy network cannot return after reboot. Application record/settings storage stays separate.
 
-On startup or loss of connection, the network worker scans visible networks and chooses the strongest saved SSID. Failed candidates are skipped until the list is exhausted, with a 20-second connection timeout and a 30-second pause when no candidate remains. A healthy connection stays connected. A successful manual selection stays connected until disconnection, then automatic selection resumes. Automatic scans stop during BLUFI provisioning; no Wi-Fi work blocks the LVGL button callback.
+On startup or loss of connection, the network worker scans visible networks and chooses the strongest saved SSID. Failed candidates are skipped until the list is exhausted, with a 20-second connection timeout. Unsuccessful scans back off from 10 to 30 seconds after three attempts and to 60 seconds after six. Waking the screen or manually refreshing resets the backoff. A healthy connection stays connected. A successful manual selection stays connected until disconnection, then automatic selection resumes. Automatic scans stop during BLUFI provisioning; no Wi-Fi work blocks the LVGL button callback.
 
 ## Controls
 

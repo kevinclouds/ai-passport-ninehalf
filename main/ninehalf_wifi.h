@@ -21,3 +21,8 @@ int nt_wifi_best(const nt_wifi_profiles_t *p, const int8_t signal[NT_WIFI_LIMIT]
 void nt_wifi_view(nt_wifi_view_t *view);
 void nt_wifi_request(const char *ssid, bool remove);
 void nt_wifi_manage(void);
+unsigned nt_wifi_scan_interval(unsigned failures);
+// Network worker owns these operations; never call from button callbacks.
+void nt_wifi_expedite(void);
+void nt_wifi_power_save(bool idle);
+unsigned nt_wifi_retry_wait(void);

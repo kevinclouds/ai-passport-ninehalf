@@ -10,6 +10,7 @@ void nt_provision_stop(void);
 bool nt_provision_active(void);
 bool nt_provision_complete(void);
 void nt_network_start(void);
+void nt_network_display(bool awake);
 void nt_network_refresh(void);
 void nt_network_provision(void);
 void nt_app_network_result(const nt_model_t *snapshot, bool success);
